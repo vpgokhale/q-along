@@ -291,7 +291,7 @@
   }
   .word.correct { background: var(--correct-bg); color: var(--correct-ink); }
   .word.skipped { background: var(--skipped-bg); color: var(--skipped-ink); }
-  .word.incorrect { background: var(--incorrect-bg); color: var(--incorrect-ink); text-decoration: line-through; text-decoration-thickness: 2px; }
+  .word.incorrect { background: var(--incorrect-bg); color: var(--incorrect-ink); }
   .word.corrected { background: var(--corrected-bg); color: var(--corrected-ink); }
   .word.helped { background: var(--helped-bg); color: var(--helped-ink); }
   .word.echoed { background: var(--echoed-bg); color: var(--echoed-ink); }
@@ -624,6 +624,7 @@
     font-size: 0.78rem;
     margin-top: 30px;
   }
+  footer a { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -648,7 +649,7 @@
   </div>
 
   <div class="unsupported" id="unsupported">
-    Your browser doesn't support live speech recognition (the Web Speech API). This prototype works best in <b>Google Chrome</b> or <b>Microsoft Edge</b> on desktop, with an internet connection and microphone access.
+    Your browser doesn't support live speech recognition (the Web Speech API), so it can't listen and check your answers — <b>this is a Safari limitation</b> (Safari has never implemented this API, on desktop or iOS). Reading prompts aloud (text-to-speech) still works here, but for the full experience — listening to you read questions and answer choices — use <b>Google Chrome</b> or <b>Microsoft Edge</b> on desktop, with an internet connection and microphone access.
   </div>
 
 
@@ -724,6 +725,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
 
     <div class="legend">
       <span><i class="swatch pending"></i> not yet read</span>
+      <span><i class="swatch" style="background:#dbeafe;box-shadow:0 0 0 1.5px var(--accent);"></i> active — waiting for speech</span>
       <span><i class="swatch correct"></i> correct</span>
       <span><i class="swatch" style="background:#65a30d"></i> correct with help</span>
       <span><i class="swatch" style="background:#7c3aed"></i> correct after choral prompt</span>
@@ -731,14 +733,6 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       <span><i class="swatch incorrect"></i> incorrect</span>
       <span><i class="swatch" style="background:#0d9488"></i> auto-corrected (2nd pass)</span>
       <span><i class="swatch" style="background:#e0e7ff;box-shadow:0 0 0 1.5px #818cf8;"></i> sounding out…</span>
-    </div>
-
-    <div class="cover-controls">
-      <span class="color-field">
-        Voice:
-        <select id="ttsVoiceSelect"><option value="">Device default</option></select>
-      </span>
-      <details class="info-tip"><summary aria-label="More info">i</summary><div class="info-tip-body">Used by Helper mode and Choral mode. Voices marked "on-device" run on this device itself — on a Mac, those are the same voices listed in System Settings → Accessibility → Spoken Content (or System Settings → Voice), including any you've downloaded there. Voices without that mark are fetched over the network by the browser and aren't part of your system's own voice set. This picks one voice explicitly so it doesn't depend on which one your browser happens to default to.</div></details>
     </div>
 
     <div class="cover-controls">
@@ -837,19 +831,20 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       <details class="card-toggle" open>
         <summary class="card-toggle-summary"><h2>1 · Load your questions</h2></summary>
         <div class="card-toggle-body">
-          <details class="info-tip"><summary aria-label="More info">i</summary><div class="info-tip-body">Paste in one question or several, each with its own answer choices — lettered (A/B/C/D), numbered, or bulleted (•, -, etc.) all work — and they'll be split apart automatically; fix anything that landed wrong on the next screen. A PDF upload is also here (works with a text-layer PDF, or a scan/photo via on-device OCR), if you'd rather use that.</div></details>
-          <textarea id="examSourceText" placeholder="Paste one question or several here, e.g.:&#10;&#10;What is the capital of France?&#10;A) London&#10;B) Paris&#10;C) Berlin&#10;D) Madrid&#10;&#10;What is 2 + 2?&#10;A) 3&#10;B) 4&#10;C) 5&#10;D) 22"></textarea>
+          <details class="info-tip"><summary aria-label="More info">i</summary><div class="info-tip-body">Works with a text-layer PDF, or a scan/photo via on-device OCR. Each question and its answer choices — lettered (A/B/C/D), numbered, or bulleted (•, -, etc.) — will be split apart automatically; fix anything that landed wrong on the next screen.</div></details>
           <div class="row">
-            <button class="btn-primary" id="examLoadTextBtn">Load questions</button>
+            <button class="btn-primary" id="examLoadPdfBtn">Load PDF</button>
           </div>
-
-          <details class="table-toggle" style="margin-top:14px">
-            <summary>Or upload a PDF instead</summary>
-            <div class="table-toggle-body">
-              <input type="file" id="examPdfInput" accept="application/pdf" class="text-input">
-            </div>
-          </details>
+          <input type="file" id="examPdfInput" accept="application/pdf" hidden>
           <div class="status-line" id="examPdfStatus"></div>
+
+          <div class="cover-controls" style="margin-top:14px">
+            <span class="color-field">
+              Voice:
+              <select id="ttsVoiceSelect"><option value="">Device default</option></select>
+            </span>
+            <details class="info-tip"><summary aria-label="More info">i</summary><div class="info-tip-body">Used whenever the app reads a question, answer choice, or word aloud. Voices marked "on-device" run on this device itself — on a Mac, those are the same voices listed in System Settings → Accessibility → Spoken Content (or System Settings → Voice), including any you've downloaded there. Voices without that mark are fetched over the network by the browser and aren't part of your system's own voice set. This picks one voice explicitly so it doesn't depend on which one your browser happens to default to.</div></details>
+          </div>
         </div>
       </details>
     </div>
@@ -883,6 +878,15 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
         <div class="reading-area exam-question-area" id="examQuestionArea"></div>
       </div>
       <div class="status-line" id="examQuestionStatus"></div>
+
+      <div class="legend">
+        <span><i class="swatch pending"></i> not yet read</span>
+        <span><i class="swatch" style="background:#dbeafe;box-shadow:0 0 0 1.5px var(--accent);"></i> active — waiting for speech</span>
+        <span><i class="swatch correct"></i> correct</span>
+        <span><i class="swatch" style="background:#65a30d"></i> correct with help</span>
+        <span><i class="swatch skipped"></i> skipped</span>
+        <span><i class="swatch incorrect"></i> incorrect</span>
+      </div>
 
       <div id="examNotesBlock" hidden>
         <label class="field-label" for="examNotesInput">Notes — jot down your thinking</label>
@@ -934,7 +938,10 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     </div>
   </div>
 
-  <footer>Prototype — speech recognition runs in your browser via the Web Speech API. The session log is saved locally in this browser only (never uploaded); export it if you need a copy elsewhere.</footer>
+  <footer>Prototype — speech recognition runs in your browser via the Web Speech API. The session log is saved locally in this browser only (never uploaded); export it if you need a copy elsewhere.
+    <br>
+    <a href="https://docs.google.com/forms/d/e/1FAIpQLSeeF9Pij2AycZD9NcDZzzYz9P-TNtkeDLJuYRzPpIEHLnYe3g/viewform?usp=header" target="_blank" rel="noopener noreferrer">Contact Q-Along</a>
+  </footer>
 </div>
 
 <!-- Optional: powers choral mode's phrase-boundary detection (part-of-speech tags, noun/verb
@@ -977,8 +984,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   const readModeSection  = document.getElementById('readModeSection');
   const examModeSection  = document.getElementById('examModeSection');
   const sessionLogCard   = document.getElementById('sessionLogCard');
-  const examSourceText    = document.getElementById('examSourceText');
-  const examLoadTextBtn   = document.getElementById('examLoadTextBtn');
+  const examLoadPdfBtn    = document.getElementById('examLoadPdfBtn');
   const examPdfInput      = document.getElementById('examPdfInput');
   const examPdfStatus     = document.getElementById('examPdfStatus');
   const examEditCard      = document.getElementById('examEditCard');
@@ -1721,6 +1727,39 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     return availableVoices.find(v => v.voiceURI === uri) || null;
   }
 
+  // Safari (and some Chrome builds, especially on phones/tablets) only allow speechSynthesis to
+  // actually produce audible sound the first time it's triggered directly inside a user gesture
+  // (a click/tap handler, called synchronously — not from a timer or a recognition callback).
+  // Every helper/correction prompt in this app is spoken from a setTimeout, since it has to escape
+  // the SpeechRecognition callback stack (see examEngineSpeakCorrection above) or fire after a
+  // silent delay (the 3-second helper timer) — neither counts as a user gesture on its own. So the
+  // very first "Start reading" / play-button click of the session speaks one, silent, real
+  // utterance right there in the click handler, which unlocks audio for every later speak() call
+  // in that page session (this is exactly how <audio>/<video> autoplay gets unlocked, applied to
+  // speech synthesis). Without this, those browsers accept every later speak() call with no error
+  // at all — it just never makes a sound, which is what "not able to hear" on another device is.
+  let ttsPrimed = false;
+  function primeTtsForSession() {
+    if (ttsPrimed) return;
+    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return;
+    ttsPrimed = true;
+    try {
+      // Deliberately not silenced (no volume/rate tricks) — some browsers only count this as a
+      // real unlock if it actually runs through the normal speech pipeline. A single space is
+      // brief enough to be barely noticeable either way.
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(' '));
+    } catch (e) { /* ignore — worst case, later speak() calls fall back to whatever the browser allows */ }
+  }
+
+  // Several TTS engines read a bare "a"/"A" as the letter name ("Capital A") instead of the
+  // indefinite article, especially with little or no surrounding sentence to disambiguate — most
+  // noticeable here since words are frequently spoken one at a time (a single word, or the first
+  // word of a question/option). Substituting a phonetic spelling fixes the pronunciation without
+  // touching anything shown on screen (this only affects what's SPOKEN, never word.raw/textContent).
+  function ttsPronounceable(text) {
+    return (text || '').replace(/\ba\b/gi, 'uh');
+  }
+
   function speakTts(text, rate) {
     if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return;
     try {
@@ -1731,7 +1770,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       // sound, with no error event at all. An explicit resume() first clears that stuck state; on
       // a queue that was never stuck, it's a harmless no-op.
       window.speechSynthesis.resume();
-      const utter = new SpeechSynthesisUtterance(text);
+      const utter = new SpeechSynthesisUtterance(ttsPronounceable(text));
       const voice = getSelectedVoice();
       if (voice) utter.voice = voice;
       if (rate != null) utter.rate = rate;
@@ -3024,12 +3063,9 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     };
   }
 
-  function examQuestionDoneText(q) {
-    const total = q.words.length;
-    const correct = q.words.filter(w => w.status === 'correct').length;
-    const pct = total ? Math.round((correct / total) * 100) : 0;
-    return 'Done — ' + pct + '% of the question read correctly.';
-  }
+  // Shown under the question once it's been read, in place of a "Done — X% correct" readout —
+  // a reminder that the active (light-blue) word can still be clicked for a spoken read-aloud.
+  const EXAM_QUESTION_READ_HINT = 'Click on active word to be read aloud.';
 
   function examUpdateSubmitVisibility() {
     const allAnswered = examQuestions.length > 0 && examQuestions.every(q => q.selectedAnswer !== -1);
@@ -3072,7 +3108,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     examUpdateNavGating();
 
     examNotesInput.value = q.notes || '';
-    examQuestionStatus.textContent = q.scored ? examQuestionDoneText(q) : '';
+    examQuestionStatus.textContent = q.scored ? EXAM_QUESTION_READ_HINT : '';
     examNotesBlock.hidden = !q.scored;
     examOptionsBlock.hidden = !q.optionsRevealed;
     examAnswerBlock.hidden = !q.optionsStarted;
@@ -3153,7 +3189,13 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     q.words.forEach((w, i) => {
       const span = document.createElement('span');
       span.className = 'word ' + w.status;
-      if (examEngineTarget === 'question' && i === examEnginePointer) span.classList.add('current-target');
+      const isCurrent = examEngineTarget === 'question' && i === examEnginePointer;
+      if (isCurrent) span.classList.add('current-target');
+      if (isCurrent && examEngineListening && w.status === 'pending') {
+        span.classList.add('help-clickable');
+        span.title = 'Click for help with this word';
+        span.addEventListener('click', function () { examRequestHelpForWord(); });
+      }
       span.textContent = w.raw;
       examQuestionArea.appendChild(span);
     });
@@ -3242,9 +3284,15 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       opt.words.forEach((w, wi) => {
         const wSpan = document.createElement('span');
         wSpan.className = 'word ' + w.status;
-        if (isListeningHere && wi === examEnginePointer) wSpan.classList.add('current-target');
+        const isCurrentWord = isListeningHere && wi === examEnginePointer;
+        if (isCurrentWord) wSpan.classList.add('current-target');
         if (!opt.revealed) wSpan.classList.add('masked');
         if (examKeywordMatches(w.norm, notesKeywordSet)) wSpan.classList.add('keyword-match');
+        if (isCurrentWord && w.status === 'pending') {
+          wSpan.classList.add('help-clickable');
+          wSpan.title = 'Click for help with this word';
+          wSpan.addEventListener('click', function () { examRequestHelpForWord(); });
+        }
         wSpan.textContent = w.raw;
         textSpan.appendChild(wSpan);
       });
@@ -3290,6 +3338,80 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     setTimeout(function () { speakTts(word.raw, null); }, 30);
   }
 
+  // ---- exam-mode helper prompt: mirrors Read mode's helper-mode timer/click pattern, but with a
+  // fixed 3-second delay (no configurable dropdown) and generalized to whichever target — question
+  // stem or answer option — the shared engine is currently reading. ----
+  let examHelperTimerHandle = null;
+
+  function examClearHelperTimer() {
+    if (examHelperTimerHandle) { clearTimeout(examHelperTimerHandle); examHelperTimerHandle = null; }
+  }
+
+  // If the reader hasn't produced the current word 3 seconds after listening starts (or after the
+  // previous word resolved), the device speaks it aloud as a prompt. If the word STILL isn't
+  // resolved 3 seconds after that spoken prompt — same timer, fired a second time — don't leave
+  // the reader stuck waiting forever: mark it wrong (red, but not crossed out — see .word.incorrect)
+  // and move on to the next word, exactly as a second wrong spoken attempt would.
+  function examScheduleHelperTimer() {
+    examClearHelperTimer();
+    if (!examEngineListening) return;
+    if (examEnginePointer >= examEngineWords.length) return;
+    const word = examEngineWords[examEnginePointer];
+    if (!word || word.status !== 'pending') return;
+
+    const wordsRefAtSchedule = examEngineWords;
+    const pointerAtSchedule = examEnginePointer;
+    examHelperTimerHandle = setTimeout(function () {
+      examHelperTimerHandle = null;
+      // Guard against the words array or pointer having moved on by the time this fires.
+      if (examEngineWords !== wordsRefAtSchedule || examEnginePointer !== pointerAtSchedule) return;
+      const w = examEngineWords[examEnginePointer];
+      if (!w || w.status !== 'pending') return;
+      if (!examEngineListening) return;
+      if (w.helperTriggered) {
+        examGiveUpOnWord(w);
+      } else {
+        examTriggerHelperPrompt(w);
+      }
+    }, 3000);
+  }
+
+  // Speaks the word aloud (auto silence-timer or a manual help click both land here) and arms a
+  // 3-second follow-up: if the reader then genuinely repeats it correctly, it's still scored
+  // "helped" (see the exact-match branch in examProcessWord) — the point is to keep them moving,
+  // not to withhold credit for a real correct answer. Only if it's STILL pending when the
+  // follow-up timer fires (silence, or wrong attempts that never reached the 2-strike cutoff) does
+  // examGiveUpOnWord mark it incorrect and move on, so the reader is never stuck forever.
+  function examTriggerHelperPrompt(word) {
+    word.helperTriggered = true;
+    speakTts(word.raw, null);
+    examEngineRenderCallback();
+    examScheduleHelperTimer(); // arm the follow-up "move on after 3 more seconds" countdown
+  }
+
+  // Reached only when a word has already been read aloud once and is still pending 3 seconds
+  // later — the reader either stayed silent or kept getting it wrong without hitting the 2-attempt
+  // cutoff. Marks it wrong and advances, same outcome as a second wrong spoken attempt.
+  function examGiveUpOnWord(word) {
+    word.status = 'incorrect';
+    examEnginePointer++;
+    examEngineRenderCallback();
+    examScheduleHelperTimer();
+    if (examEnginePointer >= examEngineWords.length) examEngineFinish();
+  }
+
+  // Manual "I need help" click on the word currently being listened for — jumps straight to the
+  // same prompt the 3-second auto-timer gives, without waiting. Only the active current-target
+  // pending word is clickable; see examRenderQuestionArea / examRenderOptionsList.
+  function examRequestHelpForWord() {
+    if (!examEngineListening) return;
+    if (examEnginePointer >= examEngineWords.length) return;
+    const word = examEngineWords[examEnginePointer];
+    if (!word || word.status !== 'pending') return;
+    examClearHelperTimer();
+    examTriggerHelperPrompt(word);
+  }
+
   function examProcessWord(rawWord) {
     const norm = normalize(rawWord);
     if (!norm || examEnginePointer >= examEngineWords.length) return;
@@ -3320,16 +3442,21 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
         examEngineWords[found].status = 'correct';
         examEnginePointer = found + 1;
         // Only offer a spoken correction for a single skipped word — with a multi-word skip run
-        // there's no reliable single word to prompt a repeat of.
+        // there's no reliable single word to prompt a repeat of. Skip the spoken prompt too if the
+        // word was already read aloud this turn (e.g. by the 3-second silence timer just before it
+        // got skipped over) so it isn't said twice in a row.
         if (skippedCount === 1) {
           const skippedWord = examEngineWords[found - 1];
           examEngineCorrectionWord = skippedWord;
-          examEngineSpeakCorrection(skippedWord);
+          if (!skippedWord.helperTriggered) examEngineSpeakCorrection(skippedWord);
         }
       } else {
         examEngineWords[examEnginePointer].heard.push(rawWord);
         examEngineWords[examEnginePointer].attempts++;
-        if (examEngineWords[examEnginePointer].attempts === 1) {
+        // Only speak a correction on the first wrong attempt if the word hasn't already been read
+        // aloud this turn (by the auto silence-timer or a manual help click) — otherwise a wrong
+        // attempt landing right after either of those prompts makes the device say the word twice.
+        if (examEngineWords[examEnginePointer].attempts === 1 && !examEngineWords[examEnginePointer].helperTriggered) {
           examEngineSpeakCorrection(examEngineWords[examEnginePointer]);
         }
         if (examEngineWords[examEnginePointer].attempts >= 2) {
@@ -3339,6 +3466,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       }
     }
     examEngineRenderCallback();
+    examScheduleHelperTimer();
     if (examEnginePointer >= examEngineWords.length) examEngineFinish();
   }
 
@@ -3353,6 +3481,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
 
   function examEngineFinish() {
     examEngineStop();
+    examClearHelperTimer();
     examEngineFinalizeLeftovers();
     examEngineRenderCallback();
     const done = examEngineOnDone;
@@ -3361,6 +3490,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   }
 
   function examEngineLoad(target, wordsArrRef, onDone) {
+    examClearHelperTimer();
     examEngineTarget = target;
     examEngineWords = wordsArrRef;
     examEnginePointer = 0;
@@ -3398,6 +3528,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     examEngineRecognition.onstart = function () {
       examEngineListening = true;
       examUpdatePlayButtons();
+      examScheduleHelperTimer();
     };
     examEngineRecognition.onresult = function (event) {
       let finalTranscript = '';
@@ -3420,6 +3551,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
         try { examEngineRecognition.start(); } catch (e) { /* already starting */ }
       } else {
         examEngineListening = false;
+        examClearHelperTimer();
         examUpdatePlayButtons();
       }
     };
@@ -3430,11 +3562,16 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     const q = examActiveQuestion();
     if (!q) return;
     q.scored = true;
-    examQuestionStatus.textContent = examQuestionDoneText(q);
+    examQuestionStatus.textContent = EXAM_QUESTION_READ_HINT;
     examNotesBlock.hidden = false;
   }
 
   function examToggleOptionPlay(idx) {
+    primeTtsForSession();
+    if (!examEngineRecognition) {
+      examAnswerStatus.textContent = "This browser doesn't support speech recognition, so it can't listen and check your answer choices — try Google Chrome or Microsoft Edge instead.";
+      return;
+    }
     const q = examActiveQuestion();
     if (!q) return;
     if (examEngineListening && examEngineTarget === 'option' && examCurrentOptionIndex === idx) {
@@ -3551,7 +3688,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(0, 0, 0);
-    doc.text('Exam Coach — Results', startX, cursor.y);
+    doc.text('Q-Along — Results', startX, cursor.y);
     cursor.y += 22;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -3613,13 +3750,23 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       cursor.y += 18;
     });
 
-    doc.save('exam-coach-results.pdf');
+    doc.save(examResultsFileName());
+  }
+
+  // "<today's date> q-along results.pdf" — a sortable YYYY-MM-DD date (not a locale-formatted one)
+  // so filenames stay consistent and sort correctly regardless of the reader's browser locale.
+  function examResultsFileName() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    return stamp + ' q-along results.pdf';
   }
 
   // ---------- wire up ----------
   loadBtn.addEventListener('click', loadText);
 
   micBtn.addEventListener('click', function () {
+    primeTtsForSession();
     if (isListening) stopListening();
     else startListening();
   });
@@ -3703,14 +3850,8 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   modeExamRadio.addEventListener('change', applyAppMode);
 
   // ---------- exam mode wiring ----------
-  examLoadTextBtn.addEventListener('click', function () {
-    const raw = examSourceText.value;
-    if (!raw.trim()) { examPdfStatus.textContent = 'Paste in at least one question first.'; return; }
-    const parsedList = examSplitIntoQuestions(raw);
-    examPdfStatus.textContent = parsedList.length
-      ? 'Found ' + parsedList.length + ' question' + (parsedList.length === 1 ? '' : 's') + ' — ready to go below.'
-      : "Couldn't confidently find lettered, numbered, or bulleted answer choices — add the question below.";
-    examBeginQuestionSet(parsedList);
+  examLoadPdfBtn.addEventListener('click', function () {
+    examPdfInput.click();
   });
 
   examPdfInput.addEventListener('change', async function () {
@@ -3750,6 +3891,11 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   });
 
   examQuestionPlayBtn.addEventListener('click', function () {
+    primeTtsForSession();
+    if (!examEngineRecognition) {
+      examQuestionStatus.textContent = "This browser doesn't support speech recognition, so it can't listen and check your reading — try Google Chrome or Microsoft Edge instead.";
+      return;
+    }
     const q = examActiveQuestion();
     if (!q) return;
     if (examEngineListening && examEngineTarget === 'question') {
