@@ -843,7 +843,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
               Voice:
               <select id="ttsVoiceSelect"><option value="">Device default</option></select>
             </span>
-            <details class="info-tip"><summary aria-label="More info">i</summary><div class="info-tip-body">Used whenever the app reads a question, answer choice, or word aloud. Voices marked "on-device" run on this device itself — on a Mac, those are the same voices listed in System Settings → Accessibility → Spoken Content (or System Settings → Voice), including any you've downloaded there. Voices without that mark are fetched over the network by the browser and aren't part of your system's own voice set. This picks one voice explicitly so it doesn't depend on which one your browser happens to default to.</div></details>
+            <details class="info-tip"><summary aria-label="More info">i</summary><div class="info-tip-body">Used whenever the app reads a question, answer choice, or word aloud. Shows up to 3 female and 3 male voices — the most commonly used English (US) voices already built into this device, not fetched over the network. Leave it on "Device default" to let the browser pick, or choose one so the voice stays the same regardless of which one your browser happens to default to.</div></details>
           </div>
         </div>
       </details>
@@ -1056,7 +1056,6 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   let choralNarratedChunkEnd = -1; // end index of the last choral chunk already read aloud, so it isn't repeated
   let ttsSpeaking = false;      // true while the device is actively speaking (helper or choral prompt)
   let availableVoices = [];     // cached speechSynthesis.getVoices() result, refreshed on onvoiceschanged
-  let userPickedVoice = false;  // true once the reader has explicitly chosen a voice (stop auto-picking one)
   let muteRecognitionUntil = 0; // Date.now() timestamp; ignore recognition results until this passes, so the
                                  // mic doesn't pick up the tail of the device's own voice as if it were the reader
   let isListening = false;
@@ -1686,38 +1685,84 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   }
 
   // Shared by helper-mode prompts and choral-mode phrase narration. Voice comes from the Voice
-  // picker below (see populateVoiceList/getSelectedVoice) — it defaults to an on-device voice
-  // rather than whatever the browser happens to consider "default", but is still just one of the
-  // reader's own device voices, not a fixed choice baked into the app. `rate` is left unset for
-  // helper mode (device default pace); choral mode passes an explicit rate since its whole point
-  // is a deliberately controlled reading pace.
+  // picker below (see populateVoiceList/getSelectedVoice) — "Device default" (an empty value)
+  // leaves the choice to the browser; otherwise it's one of the reader's own on-device voices,
+  // not a fixed choice baked into the app. `rate` is left unset for helper mode (device default
+  // pace); choral mode passes an explicit rate since its whole point is a deliberately controlled
+  // reading pace.
+  //
+  // The Web Speech API exposes no gender field on a voice, so POPULAR_FEMALE_VOICE_NAMES /
+  // POPULAR_MALE_VOICE_NAMES below are a deliberate, best-effort curation of the most commonly
+  // used built-in English (US) voice names across platforms — macOS/iOS (Samantha, Alex, Ava,
+  // Fred, ...), Windows (the classic SAPI5 "Microsoft <Name> Desktop" voices: Zira, David, Mark),
+  // and Android/ChromeOS (Google US English) — ordered most-popular-first within each list. Only
+  // on-device (localService) voices whose lang is exactly en-US are considered, matching the
+  // picker's stated scope; the first 3 matches from each list (by popularity rank, not
+  // alphabetical) are shown, grouped under "Female"/"Male" optgroups. A device with fewer matching
+  // voices installed simply shows fewer options — this never invents a voice that isn't present.
+  const POPULAR_FEMALE_VOICE_NAMES = ['Samantha', 'Zira', 'Google US English', 'Ava', 'Allison', 'Susan', 'Victoria', 'Nicky'];
+  const POPULAR_MALE_VOICE_NAMES = ['Alex', 'David', 'Mark', 'Fred', 'Tom', 'Aaron', 'Nathan', 'Evan'];
+
+  function popularVoiceRank(list, voiceName) {
+    const lower = voiceName.toLowerCase();
+    for (let i = 0; i < list.length; i++) {
+      if (lower.indexOf(list[i].toLowerCase()) !== -1) return i;
+    }
+    return -1;
+  }
+
+  function topPopularMatches(list, candidates) {
+    return candidates
+      .map(v => ({ v, rank: popularVoiceRank(list, v.name) }))
+      .filter(x => x.rank !== -1)
+      .sort((a, b) => a.rank - b.rank)
+      .slice(0, 3)
+      .map(x => x.v);
+  }
+
   // Voice lists load asynchronously in some browsers (notably Chrome), and can arrive empty on
-  // the first call — refresh the dropdown whenever the browser tells us the list changed. Local
-  // (on-device) voices are listed first since those are the ones tied to system accessibility
-  // settings; if the reader hasn't chosen one yet, the first local voice is auto-selected so
-  // Helper/Choral mode use the device's own voice by default instead of whatever the browser
-  // considers "default" (which, especially in Chrome, can be a network voice).
+  // the first call — refresh the dropdown whenever the browser tells us the list changed.
   function populateVoiceList() {
     if (!('speechSynthesis' in window)) return;
     availableVoices = window.speechSynthesis.getVoices();
     if (!availableVoices.length) return;
     const prevValue = ttsVoiceSelect.value;
-    const sorted = [...availableVoices].sort((a, b) => {
-      if (a.localService !== b.localService) return a.localService ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
+
+    const enUsLocal = availableVoices.filter(v => v.localService && v.lang.toLowerCase() === 'en-us');
+    const femaleMatches = topPopularMatches(POPULAR_FEMALE_VOICE_NAMES, enUsLocal);
+    const maleMatches = topPopularMatches(POPULAR_MALE_VOICE_NAMES, enUsLocal);
+    const shortlisted = [...femaleMatches, ...maleMatches];
+
     ttsVoiceSelect.innerHTML = '<option value="">Device default</option>';
-    sorted.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v.voiceURI;
-      opt.textContent = v.name + ' (' + v.lang + ')' + (v.localService ? ' — on-device' : ' — network');
-      ttsVoiceSelect.appendChild(opt);
-    });
-    if (prevValue && sorted.some(v => v.voiceURI === prevValue)) {
+    if (femaleMatches.length) {
+      const group = document.createElement('optgroup');
+      group.label = 'Female';
+      femaleMatches.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.voiceURI;
+        opt.textContent = v.name;
+        group.appendChild(opt);
+      });
+      ttsVoiceSelect.appendChild(group);
+    }
+    if (maleMatches.length) {
+      const group = document.createElement('optgroup');
+      group.label = 'Male';
+      maleMatches.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.voiceURI;
+        opt.textContent = v.name;
+        group.appendChild(opt);
+      });
+      ttsVoiceSelect.appendChild(group);
+    }
+
+    // Default to "Device default" (empty value) rather than auto-picking a voice; only restore an
+    // explicit prior choice if that same voice is still present in the shortlist.
+    if (prevValue && shortlisted.some(v => v.voiceURI === prevValue)) {
       ttsVoiceSelect.value = prevValue;
-    } else if (!userPickedVoice) {
-      const localVoice = sorted.find(v => v.localService && /^en/i.test(v.lang)) || sorted.find(v => v.localService);
-      if (localVoice) ttsVoiceSelect.value = localVoice.voiceURI;
+    } else {
+      ttsVoiceSelect.value = '';
     }
   }
 
@@ -2934,15 +2979,26 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   // Google Forms (and similar quiz-platform exports) always end the actual form content with its
   // own Submit/Clear-form controls, immediately followed by legal/footer boilerplate (terms,
   // privacy policy, a "report this form" link, branding) that has nothing to do with the
-  // questions. That Submit/Clear-form line is a reliable, unambiguous boundary, so rather than
-  // pattern-matching every possible footer variant, everything from that line on is dropped
-  // outright. This also clears out any now-stray lone "*" lines — Google Forms' "required
-  // question" marker, which sometimes lands on its own line separate from the question it flags.
+  // questions. Rather than pattern-matching every possible footer variant, everything from the
+  // FIRST line that looks like any part of that footer is dropped outright — several independent,
+  // unmistakable markers are checked (not just the Submit/Clear-form controls) so a single
+  // fragile match isn't the only thing standing between real content and Google's boilerplate:
+  // if the Submit/Clear-form line itself ever gets merged oddly by the text-layer extraction, the
+  // legal-footer text or the "Forms" watermark line still catches it. This also clears out any
+  // now-stray lone "*" lines — Google Forms' "required question" marker, which sometimes lands on
+  // its own line separate from the question it flags.
   function examStripFormFooter(text) {
     const lines = (text || '').split('\n');
+    const footerMarkers = [
+      /^submit\b/i,
+      /clear\s+form/i,
+      /this content is neither created nor endorsed by google/i,
+      /does this form look suspicious/i,
+      /^forms$/i, // Google Forms' own trailing brand watermark, always alone on its line
+    ];
     const footerStart = lines.findIndex(function (line) {
       const t = line.trim();
-      return /^submit\b/i.test(t) || /clear\s+form/i.test(t);
+      return footerMarkers.some(function (re) { return re.test(t); });
     });
     const kept = footerStart === -1 ? lines : lines.slice(0, footerStart);
     return kept.filter(function (line) {
@@ -3824,8 +3880,6 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   revealWordsSelect.addEventListener('change', renderWords);
   revealLinesSelect.addEventListener('change', renderWords);
   maskColorPicker.addEventListener('input', function () { applyMaskColor(maskColorPicker.value); });
-
-  ttsVoiceSelect.addEventListener('change', function () { userPickedVoice = true; });
 
   // ---------- app mode (Read / Exam) ----------
   // Read mode's UI (typography, passage loading, the reading area, helper/choral controls) lives
