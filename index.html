@@ -1059,6 +1059,8 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   let muteRecognitionUntil = 0; // Date.now() timestamp; ignore recognition results until this passes, so the
                                  // mic doesn't pick up the tail of the device's own voice as if it were the reader
   let isListening = false;
+  let justStartedListening = false; // true only for the very first helper-timer arm after "Start
+                                     // reading" is pressed — see scheduleHelperTimer's warm-up grace
   let userStopped = true; // true when the user hasn't asked to listen (guards auto-restart)
   let lastWcpm = null;     // words-correct-per-minute from the most recently finished session
   let lastElapsedMs = null;
@@ -1090,6 +1092,8 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   let examEngineWords = [];
   let examEnginePointer = 0;
   let examEngineListening = false;
+  let examEngineJustStarted = false; // true only for the very first helper-timer arm after Play is
+                                      // pressed — see examScheduleHelperTimer's warm-up grace
   let examEngineUserStopped = true;
   let examEngineTarget = null;      // 'question' | 'option' — which view to re-render on each update
   let examEngineOnDone = null;
@@ -1647,6 +1651,14 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     if (helperTimerHandle) { clearTimeout(helperTimerHandle); helperTimerHandle = null; }
   }
 
+  // The very first time this arms after "Start reading" is pressed gets a short extra warm-up
+  // grace on top of the chosen delay (justStartedListening, set in startListening and consumed
+  // here exactly once): the speech recognizer needs a brief moment after start() to actually begin
+  // capturing audio, and a word spoken right as the reader presses Start can otherwise be missed
+  // entirely — heard by no one, then read aloud once the timer fires even though it was said
+  // correctly. Every word after the first uses the plain chosen delay, unaffected.
+  const HELPER_FIRST_WORD_WARMUP_MS = 700;
+
   function scheduleHelperTimer() {
     clearHelperTimer();
     if (!helperModeToggle.checked || !isListening) return;
@@ -1654,6 +1666,8 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
 
     const wordIndexAtSchedule = pointer;
     const delaySec = parseInt(helperDelaySelect.value, 10) || 5;
+    const delay = delaySec * 1000 + (justStartedListening ? HELPER_FIRST_WORD_WARMUP_MS : 0);
+    justStartedListening = false;
     helperTimerHandle = setTimeout(function () {
       helperTimerHandle = null;
       // Guard against the pointer having moved on (word already resolved) by the time this fires.
@@ -1662,7 +1676,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       if (!word || word.status !== 'pending') return;
       if (!helperModeToggle.checked || !isListening) return;
       triggerHelperPrompt(word);
-    }, delaySec * 1000);
+    }, delay);
   }
 
   function triggerHelperPrompt(word) {
@@ -2054,7 +2068,8 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     recognition.lang = 'en-US';
 
     recognition.onstart = function () {
-      isListening = true;
+      // isListening is already true (set optimistically in startListening, before this fired) —
+      // this is just the first point we know the recognizer is actually running.
       micDot.classList.add('live');
       micLabel.textContent = 'Stop reading';
       setStatus('Listening… read the highlighted text aloud.');
@@ -2137,6 +2152,12 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         setStatus('Microphone access was blocked. Allow microphone permission for this page and try again.', 'error');
         userStopped = true;
+        // The recognizer never actually started — undo the optimistic "listening" state from
+        // startListening so the UI doesn't keep showing the word as active/clickable-for-help
+        // when nothing is listening.
+        isListening = false;
+        justStartedListening = false;
+        renderWords();
       } else {
         setStatus('Speech recognition error: ' + event.error, 'error');
       }
@@ -2178,12 +2199,24 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     liveTimer.classList.remove('show');
   }
 
+  // isListening flips true here — synchronously, the moment "Start reading" is pressed — rather
+  // than waiting for the recognizer's own async onstart event, which can lag the click by a
+  // noticeable moment (mic permission/audio-pipeline setup). Until this flips, the current word
+  // shows no "listening" highlight and isn't clickable for help (see renderWords), so without this
+  // a reader can't ask for help on the very first word until something else triggers a re-render.
+  // The real helper-timer countdown still only starts once onstart actually confirms the
+  // recognizer is running (see scheduleHelperTimer), so this doesn't change when a word can be
+  // auto-resolved — only when it becomes visible and clickable. If the recognizer then fails to
+  // actually start (permission denied — see onerror above), this optimistic state is reverted.
   function startListening() {
     if (!recognition || words.length === 0) {
       if (words.length === 0) setStatus('Load some text first.', 'warn');
       return;
     }
     userStopped = false;
+    isListening = true;
+    justStartedListening = true;
+    renderWords();
     try { recognition.start(); } catch (e) { /* already started */ }
   }
 
@@ -3408,6 +3441,16 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
   // resolved 3 seconds after that spoken prompt — same timer, fired a second time — don't leave
   // the reader stuck waiting forever: mark it wrong (red, but not crossed out — see .word.incorrect)
   // and move on to the next word, exactly as a second wrong spoken attempt would.
+  //
+  // The very first time this arms after Play is pressed gets a short extra warm-up grace on top of
+  // the usual 3 seconds (examEngineJustStarted, set in examEngineStart and consumed here exactly
+  // once): the speech recognizer needs a brief moment after start() to actually begin capturing
+  // audio, and a word spoken right as the reader presses Play can otherwise be missed entirely —
+  // heard by no one, then "helped" or given up on 3 seconds later even though it was said correctly.
+  // Every word after the first uses the plain 3-second delay, unaffected.
+  const EXAM_HELPER_DELAY_MS = 3000;
+  const EXAM_FIRST_WORD_WARMUP_MS = 700;
+
   function examScheduleHelperTimer() {
     examClearHelperTimer();
     if (!examEngineListening) return;
@@ -3417,6 +3460,8 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
 
     const wordsRefAtSchedule = examEngineWords;
     const pointerAtSchedule = examEnginePointer;
+    const delay = EXAM_HELPER_DELAY_MS + (examEngineJustStarted ? EXAM_FIRST_WORD_WARMUP_MS : 0);
+    examEngineJustStarted = false;
     examHelperTimerHandle = setTimeout(function () {
       examHelperTimerHandle = null;
       // Guard against the words array or pointer having moved on by the time this fires.
@@ -3429,7 +3474,7 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
       } else {
         examTriggerHelperPrompt(w);
       }
-    }, 3000);
+    }, delay);
   }
 
   // Speaks the word aloud (auto silence-timer or a manual help click both land here) and arms a
@@ -3563,9 +3608,23 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     examEngineLoad(target, wordsArrRef, onDone);
   }
 
+  // examEngineListening flips true here — synchronously, the moment Play is pressed — rather than
+  // waiting for the recognizer's own async onstart event. onstart can lag the click by a
+  // noticeable moment (mic permission/audio-pipeline setup), and until this flips, the current
+  // word shows no "listening" highlight and isn't clickable for help (see examRenderQuestionArea /
+  // examRenderOptionsList's help-clickable/current-target checks) — so without this, a reader
+  // can't ask for help on the very first word until something else happens to trigger a re-render.
+  // The real 3-second give-up countdown still only starts once onstart actually confirms the
+  // recognizer is running (see examScheduleHelperTimer), so this doesn't change when a word can be
+  // auto-resolved — only when it becomes visible and clickable. If the recognizer then fails to
+  // actually start (permission denied — see onerror below), this optimistic state is reverted.
   function examEngineStart() {
     if (!examEngineRecognition || !examEngineWords.length) return;
     examEngineUserStopped = false;
+    examEngineListening = true;
+    examEngineJustStarted = true;
+    examUpdatePlayButtons();
+    examEngineRenderCallback();
     try { examEngineRecognition.start(); } catch (e) { /* already started */ }
   }
 
@@ -3582,8 +3641,9 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     examEngineRecognition.lang = 'en-US';
 
     examEngineRecognition.onstart = function () {
-      examEngineListening = true;
-      examUpdatePlayButtons();
+      // examEngineListening is already true (set optimistically in examEngineStart) — this is the
+      // first point we know the recognizer is actually running, so the real give-up countdown
+      // starts here, not at the click.
       examScheduleHelperTimer();
     };
     examEngineRecognition.onresult = function (event) {
@@ -3600,15 +3660,27 @@ Try pasting in a passage with a few paragraphs — a blank line between them, li
     };
     examEngineRecognition.onerror = function (event) {
       if (event.error === 'no-speech' || event.error === 'audio-capture') return;
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') examEngineUserStopped = true;
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        examEngineUserStopped = true;
+        // The recognizer never actually started — undo the optimistic "listening" state from
+        // examEngineStart so the UI doesn't keep showing the word as active/clickable-for-help
+        // when nothing is listening.
+        examEngineListening = false;
+        examEngineJustStarted = false;
+        examClearHelperTimer();
+        examUpdatePlayButtons();
+        examEngineRenderCallback();
+      }
     };
     examEngineRecognition.onend = function () {
       if (!examEngineUserStopped) {
         try { examEngineRecognition.start(); } catch (e) { /* already starting */ }
       } else {
         examEngineListening = false;
+        examEngineJustStarted = false;
         examClearHelperTimer();
         examUpdatePlayButtons();
+        examEngineRenderCallback();
       }
     };
   }
